@@ -12,8 +12,6 @@
 
 void usage(void);
 int serialport_init(const char* serialport, int baud);
-int serialport_writebyte(int fd, uint8_t b);
-int serialport_write(int fd, const char* str);
 int serialport_read_until(int fd, char* buf, char until);
 
 void usage(void) {
@@ -23,7 +21,6 @@ void usage(void) {
     "  -h, --help                   Print this help message\n"
     "  -p, --port=serialport        Serial port Arduino is on\n"
     "  -b, --baud=baudrate          Baudrate (bps) of Arduino\n"
-    "  -s, --send=data              Send data to Arduino\n"
     "  -r, --receive                Receive data from Arduino & print it out\n"
     "  -n  --num=num                Send a number as a single byte\n"
     "  -d  --delay=millis           Delay for specified milliseconds\n"
@@ -53,7 +50,6 @@ int main(int argc, char *argv[])
         {"help",       no_argument,       0, 'h'},
         {"port",       required_argument, 0, 'p'},
         {"baud",       required_argument, 0, 'b'},
-        {"send",       required_argument, 0, 's'},
         {"receive",    no_argument,       0, 'r'},
         {"num",        required_argument, 0, 'n'},
         {"delay",      required_argument, 0, 'd'}
@@ -80,16 +76,6 @@ int main(int argc, char *argv[])
             fd = serialport_init(optarg, baudrate);
             if(fd==-1) return -1;
             break;
-        case 'n':
-            n = strtol(optarg, NULL, 10); // convert string to number
-            rc = serialport_writebyte(fd, (uint8_t)n);
-            if(rc==-1) return -1;
-            break;
-        case 's':
-            strcpy(buf,optarg);
-            rc = serialport_write(fd, buf);
-            if(rc==-1) return -1;
-            break;
         case 'r':
             serialport_read_until(fd, buf, '\n');
             printf("read: %s\n",buf);
@@ -99,23 +85,6 @@ int main(int argc, char *argv[])
 
     exit(EXIT_SUCCESS);    
 } // end main
-    
-int serialport_writebyte( int fd, uint8_t b)
-{
-    int n = write(fd,&b,1);
-    if( n!=1)
-        return -1;
-    return 0;
-}
-
-int serialport_write(int fd, const char* str)
-{
-    int len = strlen(str);
-    int n = write(fd, str, len);
-    if( n!=len ) 
-        return -1;
-    return 0;
-}
 
 int serialport_read_until(int fd, char* buf, char until)
 {
@@ -189,7 +158,6 @@ int serialport_init(const char* serialport, int baud)
     toptions.c_lflag &= ~(ICANON | ECHO | ECHOE | ISIG); // make raw
     toptions.c_oflag &= ~OPOST; // make raw
 
-    // see: http://unixwiz.net/techtips/termios-vmin-vtime.html
     toptions.c_cc[VMIN]  = 0;
     toptions.c_cc[VTIME] = 20;
     
