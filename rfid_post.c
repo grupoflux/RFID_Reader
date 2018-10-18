@@ -1,199 +1,113 @@
-# include <stdio.h>    /* Standard input/output definitions */
-# include <stdlib.h> 
-# include <stdint.h>   /* Standard types */
-# include <string.h>   /* String function definitions */
-# include <unistd.h>   /* UNIX standard function definitions */
-# include <fcntl.h>    /* File control definitions */
-# include <errno.h>    /* Error number definitions */
-# include <termios.h>  /* POSIX terminal control definitions */
-# include <sys/ioctl.h>
-# include <getopt.h>
-# include <curl/curl.h>
+#include <stdio.h>
+#include <fcntl.h>   /* File Control Definitions           */
+#include <termios.h> /* POSIX Terminal Control Definitions */
+#include <unistd.h>  /* UNIX Standard Definitions 	   */
+#include <errno.h>   /* ERROR Number Definitions           */
+#include <curl/curl.h>
+#include <stdlib.h>
+#include <string.h>
 
-void usage(void);
-int serialport_init(const char* serialport, int baud);
-int serialport_read_until(int fd, char* buf, char until);
-
-void usage(void) {
-    printf("Usage: arduino-serial -p <serialport> [OPTIONS]\n"
-    "\n"
-    "Options:\n"
-    "  -h, --help                   Print this help message\n"
-    "  -p, --port=serialport        Serial port Arduino is on\n"
-    "  -b, --baud=baudrate          Baudrate (bps) of Arduino\n"
-    "  -r, --receive                Receive data from Arduino & print it out\n"
-    "  -n  --num=num                Send a number as a single byte\n"
-    "  -d  --delay=millis           Delay for specified milliseconds\n"
-    "\n"
-    "Note: Order is important. Set '-b' before doing '-p'. \n"
-    "      Used to make series of actions:  '-d 2000 -s hello -d 100 -r' \n"
-    "      means 'wait 2secs, send 'hello', wait 100msec, get reply'\n"
-    "\n");
-}
-
-int main(int argc, char *argv[]) 
+int main()
 {
-    int fd = 0;
-    char serialport[256];
-    int baudrate = B9600;  // default
-    char buf[256];
-    int rc,n;
-    CURL *curl;
-    CURLcode res;
+	int fd; /*File Descriptor*/
+	CURL *curl;
+	CURLcode res;
 
-    if (argc==1) {
-        usage();
-        exit(EXIT_SUCCESS);
-    }
+	printf("\n +----------------------------------+");
+	printf("\n |        Serial Port Read          |");
+	printf("\n +----------------------------------+");
 
-    /* parse options */
-    int option_index = 0, opt;
-    static struct option loptions[] = {
-        {"help",       no_argument,       0, 'h'},
-        {"port",       required_argument, 0, 'p'},
-        {"baud",       required_argument, 0, 'b'},
-        {"receive",    no_argument,       0, 'r'},
-        {"num",        required_argument, 0, 'n'},
-        {"delay",      required_argument, 0, 'd'}
-    };
-    
-    while(1) {
-        opt = getopt_long (argc, argv, "hp:b:s:rn:d:",
-                           loptions, &option_index);
-        if (opt==-1) break;
-        switch (opt) {
-        case '0': break;
-        case 'd':
-            n = strtol(optarg,NULL,10);
-            usleep(n * 1000 ); // sleep milliseconds
-            break;
-        case 'h':
-            usage();
-            break;
-        case 'b':
-            baudrate = strtol(optarg,NULL,10);
-            break;
-        case 'p':
-            strcpy(serialport,optarg);
-            fd = serialport_init(optarg, baudrate);
-            if(fd==-1) return -1;
-            break;
-        case 'r':
-            serialport_read_until(fd, buf, '\n'); 
-            printf("read: %s\n",buf);
-            /* colocar aqui o trecho para enviar o código hexadecimal via HTTP POST */
-            curl_global_init(CURL_GLOBAL_ALL);
-            curl = curl_easy_init();
-            if (curl == NULL) {
-                return 128;
-            }
+	/*------------------------------- Opening the Serial Port -------------------------------*/
 
-            //char* jsonObj = "{ \"name\" : \"Teste\" , \"idade\" : \"999\" }";
-            char *jsonObj = buf;
-            struct curl_slist *headers = NULL;
-            curl_slist_append(headers, "Accept: application/json");
-            curl_slist_append(headers, "Content-Type: application/json");
-            curl_slist_append(headers, "charsets: utf-8");
+	/* Change /dev/ttyUSB0 to the one corresponding to your system */
 
-            curl_easy_setopt(curl, CURLOPT_URL, "https://postman-echo.com/post");
+	fd = open("/dev/ttyACM0", O_RDWR | O_NOCTTY); /* ttyUSB0 is the FT232 based USB2SERIAL Converter   */
+												  /* O_RDWR   - Read/Write access to serial port       */
+												  /* O_NOCTTY - No terminal will control the process   */
+												  /* Open in blocking mode,read will wait              */
 
-            curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, "POST");
-            curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
-            curl_easy_setopt(curl, CURLOPT_POSTFIELDS, jsonObj);
-            curl_easy_setopt(curl, CURLOPT_USERAGENT, "libcrp/0.1");
+	if (fd == -1) /* Error Checking */
+		printf("\n  Error! in Opening ttyACM0  ");
+	else
+		printf("\n  ttyACM0 Opened Successfully ");
 
-            curl_easy_setopt(curl, CURLOPT_DEBUGFUNCTION, main);
-            res = curl_easy_perform(curl);
+	/*---------- Setting the Attributes of the serial port using termios structure --------- */
 
-            curl_easy_cleanup(curl);
-            curl_global_cleanup();
-            printf("\n");
-            break;
-        }
-    }
+	struct termios SerialPortSettings; /* Create the structure                          */
 
-    exit(EXIT_SUCCESS);    
-} // end main
+	tcgetattr(fd, &SerialPortSettings); /* Get the current attributes of the Serial port */
 
-int serialport_read_until(int fd, char* buf, char until)
-{
-    char b[1];
-    int i=0;
-    do { 
-        int n = read(fd, b, 1);  // read a char at a time
-        if( n==-1) return -1;    // couldn't read
-        if( n==0 ) {
-            usleep( 10 * 1000 ); // wait 10 msec try again
-            continue;
-        }
-        buf[i] = b[0]; i++;
-    } while( b[0] != until );
+	/* Setting the Baud rate */
+	cfsetispeed(&SerialPortSettings, B9600); /* Set Read  Speed as 9600                       */
+	cfsetospeed(&SerialPortSettings, B9600); /* Set Write Speed as 9600                       */
 
-    buf[i] = 0;  // null terminate the string
-    return 0;
-}
+	/* 8N1 Mode */
+	SerialPortSettings.c_cflag &= ~PARENB; /* Disables the Parity Enable bit(PARENB),So No Parity   */
+	SerialPortSettings.c_cflag &= ~CSTOPB; /* CSTOPB = 2 Stop bits,here it is cleared so 1 Stop bit */
+	SerialPortSettings.c_cflag &= ~CSIZE;  /* Clears the mask for setting the data size             */
+	SerialPortSettings.c_cflag |= CS8;	 /* Set the data bits = 8                                 */
 
-// takes the string name of the serial port (e.g. "/dev/tty.usbserial","COM1")
-// and a baud rate (bps) and connects to that port at that speed and 8N1.
-// opens the port in fully raw mode so you can send binary data.
-// returns valid fd, or -1 on error
-int serialport_init(const char* serialport, int baud)
-{
-    struct termios toptions;
-    int fd;
-    
-    //fprintf(stderr,"init_serialport: opening port %s @ %d bps\n",
-    //        serialport,baud);
+	SerialPortSettings.c_cflag &= ~CRTSCTS;		  /* No Hardware flow Control                         */
+	SerialPortSettings.c_cflag |= CREAD | CLOCAL; /* Enable receiver,Ignore Modem Control lines       */
 
-    fd = open(serialport, O_RDWR | O_NOCTTY | O_NDELAY);
-    if (fd == -1)  {
-        perror("init_serialport: Unable to open port ");
-        return -1;
-    }
-    
-    if (tcgetattr(fd, &toptions) < 0) {
-        perror("init_serialport: Couldn't get term attributes");
-        return -1;
-    }
-    speed_t brate = baud; // let you override switch below if needed
-    switch(baud) {
-    case 4800:   brate=B4800;   break;
-    case 9600:   brate=B9600;   break;
-#ifdef B14400
-    case 14400:  brate=B14400;  break;
-#endif
-    case 19200:  brate=B19200;  break;
-#ifdef B28800
-    case 28800:  brate=B28800;  break;
-#endif
-    case 38400:  brate=B38400;  break;
-    case 57600:  brate=B57600;  break;
-    case 115200: brate=B115200; break;
-    }
-    cfsetispeed(&toptions, brate);
-    cfsetospeed(&toptions, brate);
+	SerialPortSettings.c_iflag &= ~(IXON | IXOFF | IXANY);		   /* Disable XON/XOFF flow control both i/p and o/p */
+	SerialPortSettings.c_iflag &= ~(ICANON | ECHO | ECHOE | ISIG); /* Non Cannonical mode                            */
 
-    // 8N1
-    toptions.c_cflag &= ~PARENB;
-    toptions.c_cflag &= ~CSTOPB;
-    toptions.c_cflag &= ~CSIZE;
-    toptions.c_cflag |= CS8;
-    // no flow control
-    toptions.c_cflag &= ~CRTSCTS;
+	SerialPortSettings.c_oflag &= ~OPOST; /*No Output Processing*/
 
-    toptions.c_cflag |= CREAD | CLOCAL;  // turn on READ & ignore ctrl lines
-    toptions.c_iflag &= ~(IXON | IXOFF | IXANY); // turn off s/w flow ctrl
+	/* Setting Time outs */
+	SerialPortSettings.c_cc[VMIN] = 12; /* Read at least 12 characters */
+	SerialPortSettings.c_cc[VTIME] = 0; /* Wait indefinetly   */
 
-    toptions.c_lflag &= ~(ICANON | ECHO | ECHOE | ISIG); // make raw
-    toptions.c_oflag &= ~OPOST; // make raw
+	if ((tcsetattr(fd, TCSANOW, &SerialPortSettings)) != 0) /* Set the attributes to the termios structure*/
+		printf("\n  ERROR ! in Setting attributes");
+	else
+		printf("\n  BaudRate = 9600 \n  StopBits = 1 \n  Parity   = none");
 
-    toptions.c_cc[VMIN]  = 0;
-    toptions.c_cc[VTIME] = 20;
-    
-    if( tcsetattr(fd, TCSANOW, &toptions) < 0) {
-        perror("init_serialport: Couldn't set term attributes");
-        return -1;
-    }
+	/*------------------------------- Read data from serial port -----------------------------*/
 
-    return fd;
+	tcflush(fd, TCIFLUSH); /* Discards old data in the rx buffer            */
+
+	char read_buffer[32]; /* Buffer to store the data received              */
+	int bytes_read = 0;   /* Number of bytes read by the read() system call */
+	int i = 0;
+
+	bytes_read = read(fd, &read_buffer, 12); /* Read the data                   */
+
+	printf("\n\n  Bytes Rxed -%d", bytes_read); /* Print the number of bytes read */
+	printf("\n\n  ");
+	printf("\n +----------------------------------+\n\n\n");
+
+	close(fd); /* Close the serial port */
+
+	curl_global_init(CURL_GLOBAL_ALL);
+	curl = curl_easy_init();
+	if (curl == NULL)
+	{
+		return 128;
+	}
+	char dest[12];
+
+	char *jsonObja = "uuid=";
+	strcpy(dest, jsonObja);
+	strcat(dest, read_buffer);
+
+	char *jsonObj = dest;
+	struct curl_slist *headers = NULL;
+	curl_slist_append(headers, "Accept: application/json");
+	curl_slist_append(headers, "Content-Type: application/json");
+	curl_slist_append(headers, "charsets: utf-8");
+
+	curl_easy_setopt(curl, CURLOPT_URL, "https://postman-echo.com/post");
+
+	curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, "POST");
+	curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
+	curl_easy_setopt(curl, CURLOPT_POSTFIELDS, jsonObj);
+	curl_easy_setopt(curl, CURLOPT_DEBUGFUNCTION, main);
+	res = curl_easy_perform(curl);
+
+	curl_easy_cleanup(curl);
+	curl_global_cleanup();
+
+	return res;
 }
