@@ -12,8 +12,6 @@ void setup()
   Serial.begin(9600); 
   SPI.begin();
   mfrc522.PCD_Init();
-  Serial.println("Aproxime o seu cartao do leitor...");
-  Serial.println();
 }
 
 void loop()
@@ -28,8 +26,6 @@ void loop()
   {
     return;
   }
-  //Mostra UID na serial
-  Serial.print("UID da tag :");
   String conteudo= "";
   byte letra;
   for (byte i = 0; i < mfrc522.uid.size; i++)
@@ -39,18 +35,9 @@ void loop()
      conteudo.concat(String(mfrc522.uid.uidByte[i] < 0x10 ? " 0" : " "));
      conteudo.concat(String(mfrc522.uid.uidByte[i], HEX));
   }
-  Serial.println();
-  Serial.print("Mensagem : ");
   conteudo.toUpperCase();
-  if (conteudo.substring(1) == "33 44 BA 02") //UID 1
-  {
-    Serial.println("Bem vindo, Fernando!");
-    Serial.println();
-  }
+  Serial.println();
+  delay(2000);
+  
 
-  if (conteudo.substring(1) == "47 AF 2E 00") //UID 2
-  {
-    Serial.println("Bem vinda, Maria!");
-    Serial.println();
-  }
 }
